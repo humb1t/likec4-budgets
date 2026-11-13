@@ -1,0 +1,85 @@
+name: likec4-budgets
+description: Check coupling budgets of a LikeC4 model and publish the report in the job summary.
+author: Nikita Bishonen
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  model:
+    description: A LikeC4 workspace directory, or the JSON written by `likec4 export json`.
+    required: false
+    default: '.'
+  config:
+    description: Path of the budgets config.
+    required: false
+    default: likec4-budgets.json
+  project:
+    description: Project name, for a workspace or export that holds more than one.
+    required: false
+    default: ''
+  status:
+    description: Score only relationships with one of these status tags (comma list).
+    required: false
+    default: ''
+  report-md:
+    description: Where to write the Markdown report.
+    required: false
+    default: likec4-budgets-report.md
+  report-json:
+    description: Where to write the JSON report.
+    required: false
+    default: likec4-budgets-report.json
+  node-version:
+    description: Node version to run with (LikeC4 1.60 needs 22.22.3 or newer).
+    required: false
+    default: '22'
+
+outputs:
+  exit-code:
+    description: 0 pass, 1 at least one rule fails, 2 the model or the arguments are invalid.
+    value: ${{ steps.run.outputs.exit-code }}
+  status:
+    description: pass, budget broken or model error.
+    value: ${{ steps.run.outputs.status }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Build likec4-budgets
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        npm ci --no-audit --no-fund
+        npm run build
+
+    - name: Check budgets
+      id: run
+      shell: bash
+      env:
+        INPUT_MODEL: ${{ inputs.model }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_STATUS: ${{ inputs.status }}
+        INPUT_REPORT_MD: ${{ inputs.report-md }}
+        INPUT_REPORT_JSON: ${{ inputs.report-json }}
+      run: |
+        args=("$INPUT_MODEL" --config "$INPUT_CONFIG" --out "$INPUT_REPORT_MD" --json "$INPUT_REPORT_JSON")
+        if [ -n "$INPUT_PROJECT" ]; then args+=(--project "$INPUT_PROJECT"); fi
+        if [ -n "$INPUT_STATUS" ]; then args+=(--status "$INPUT_STATUS"); fi
+        set +e
+        node "$GITHUB_ACTION_PATH/dist/cli.js" "${args[@]}"
+        code=$?
+        set -e
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        case "$code" in
+          0) echo "status=pass" >> "$GITHUB_OUTPUT" ;;
+          1) echo "status=budget broken" >> "$GITHUB_OUTPUT" ;;
+          *) echo "status=model error" >> "$GITHUB_OUTPUT" ;;
+        esac
+        if [ -f "$INPUT_REPORT_MD" ]; then cat "$INPUT_REPORT_MD" >> "$GITHUB_STEP_SUMMARY"; fi
+        exit "$code"

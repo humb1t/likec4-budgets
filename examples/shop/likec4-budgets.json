@@ -1,0 +1,473 @@
+{
+  "$schema": "../../schema/config.schema.json",
+  "model": {
+    "unitKinds": [
+      "service",
+      "job",
+      "library"
+    ],
+    "entityKinds": [
+      "record"
+    ],
+    "containerKinds": [
+      "tier",
+      "cluster"
+    ],
+    "externalKinds": [
+      "client"
+    ],
+    "externalWithin": {
+      "kind": "tier",
+      "metadata": {
+        "tier": "outside"
+      }
+    },
+    "dimensions": [
+      "tier",
+      "cluster"
+    ],
+    "metadata": {
+      "units": {
+        "tier": {
+          "values": [
+            "edge",
+            "domain",
+            "base"
+          ]
+        },
+        "cluster": {
+          "values": [
+            "shopping",
+            "admin",
+            "fulfilment",
+            "payments",
+            "foundation"
+          ]
+        },
+        "state": {
+          "values": [
+            "live",
+            "wip",
+            "planned"
+          ]
+        },
+        "team": {}
+      },
+      "externals": {
+        "state": {
+          "values": [
+            "live",
+            "wip",
+            "planned"
+          ]
+        },
+        "team": {}
+      },
+      "tier": {
+        "tier": {
+          "values": [
+            "edge",
+            "domain",
+            "base",
+            "outside"
+          ]
+        }
+      },
+      "cluster": {
+        "cluster": {
+          "values": [
+            "shopping",
+            "admin",
+            "fulfilment",
+            "payments",
+            "foundation"
+          ]
+        }
+      }
+    },
+    "belongsTo": {
+      "cluster": {
+        "within": "tier",
+        "map": {
+          "shopping": "edge",
+          "admin": "edge",
+          "fulfilment": "domain",
+          "payments": "domain",
+          "foundation": "base"
+        }
+      }
+    },
+    "placement": {
+      "keys": [
+        "tier",
+        "cluster"
+      ],
+      "implied": {
+        "cluster": {
+          "from": "tier",
+          "map": {
+            "base": "foundation"
+          }
+        }
+      }
+    }
+  },
+  "relationships": {
+    "weights": {
+      "ids": 1,
+      "listens": 2,
+      "invokes": 4,
+      "replicates": 6
+    },
+    "statusTags": [
+      "live",
+      "wip",
+      "planned"
+    ]
+  },
+  "rules": [
+    {
+      "id": "FOUNDATION-ISOLATED",
+      "type": "allowedKinds",
+      "description": "a base unit knows no unit outside the base",
+      "from": {
+        "tier": "base"
+      },
+      "to": {
+        "tier": {
+          "not": "base"
+        }
+      },
+      "allowed": []
+    },
+    {
+      "id": "COUPLING-BASE",
+      "type": "maxWeightedOut",
+      "description": "weighted outward coupling of a base unit at most N",
+      "units": {
+        "cluster": "foundation"
+      },
+      "max": 5
+    },
+    {
+      "id": "DOWN-KIND",
+      "type": "allowedKinds",
+      "description": "shopping to the domain tier uses an allowed kind",
+      "from": {
+        "cluster": "shopping"
+      },
+      "to": {
+        "tier": "domain"
+      },
+      "allowed": [
+        "ids",
+        "listens",
+        "invokes"
+      ]
+    },
+    {
+      "id": "DOWN-CALLS",
+      "type": "fanOut",
+      "description": "a shopping unit invokes the domain tier at most N times (invokes tagged lookup are counted and also warned)",
+      "from": {
+        "cluster": "shopping"
+      },
+      "to": {
+        "tier": "domain"
+      },
+      "kinds": [
+        "invokes"
+      ],
+      "count": "relationships",
+      "max": 2,
+      "noun": "invokes"
+    },
+    {
+      "id": "DOWN-FOUNDATION-KIND",
+      "type": "allowedKinds",
+      "description": "shopping to the base uses an allowed kind",
+      "from": {
+        "cluster": "shopping"
+      },
+      "to": {
+        "tier": "base"
+      },
+      "allowed": [
+        "ids",
+        "invokes"
+      ]
+    },
+    {
+      "id": "SIBLINGS",
+      "type": "fanOut",
+      "description": "a shopping unit knows at most N other units of its cluster",
+      "from": {
+        "cluster": "shopping"
+      },
+      "to": {
+        "cluster": "shopping"
+      },
+      "count": "units",
+      "max": 1,
+      "noun": "units"
+    },
+    {
+      "id": "COUPLING-FRONT",
+      "type": "maxWeightedOut",
+      "description": "weighted outward coupling of a shopping unit at most N",
+      "units": {
+        "cluster": "shopping"
+      },
+      "max": 21
+    },
+    {
+      "id": "COUPLING-TOTAL",
+      "type": "maxWeightedLeaving",
+      "description": "weighted coupling that leaves cluster shopping at most N in total",
+      "group": {
+        "cluster": "shopping"
+      },
+      "max": 40,
+      "subject": "cluster shopping"
+    },
+    {
+      "id": "UP-KIND",
+      "type": "allowedKinds",
+      "description": "domain to edge uses an allowed kind",
+      "from": {
+        "tier": "domain"
+      },
+      "to": {
+        "tier": "edge"
+      },
+      "allowed": [
+        "ids"
+      ]
+    },
+    {
+      "id": "UP-BREADTH",
+      "type": "fanOut",
+      "description": "a domain unit knows at most N edge records (N per cluster)",
+      "from": {
+        "tier": "domain"
+      },
+      "to": {
+        "tier": "edge"
+      },
+      "count": "nodes",
+      "max": {
+        "by": "cluster",
+        "values": {
+          "fulfilment": 0,
+          "payments": 1
+        },
+        "default": 0
+      },
+      "noun": "edge records"
+    },
+    {
+      "id": "UP-NEEDS-DOWN",
+      "type": "needsInbound",
+      "description": "a domain unit that holds an edge identifier is invoked by a shopping unit, unless the identifier is tagged handed-in",
+      "from": {
+        "tier": "domain"
+      },
+      "to": {
+        "tier": "edge"
+      },
+      "exceptTag": "handed-in",
+      "inbound": {
+        "from": {
+          "cluster": "shopping"
+        },
+        "kinds": [
+          "invokes"
+        ]
+      }
+    },
+    {
+      "id": "CLUSTER-KIND",
+      "type": "allowedKinds",
+      "description": "a domain unit to its own cluster uses an allowed kind",
+      "from": {
+        "tier": "domain"
+      },
+      "to": {
+        "tier": "domain",
+        "cluster": {
+          "same": true
+        }
+      },
+      "allowed": [
+        "ids",
+        "listens",
+        "replicates"
+      ]
+    },
+    {
+      "id": "CLUSTER-BREADTH",
+      "type": "fanOut",
+      "description": "a domain unit knows at most N units of its cluster",
+      "from": {
+        "tier": "domain"
+      },
+      "to": {
+        "tier": "domain",
+        "cluster": {
+          "same": true
+        }
+      },
+      "count": "units",
+      "max": 2,
+      "noun": "units"
+    },
+    {
+      "id": "CROSS-CLUSTER",
+      "type": "allowedKinds",
+      "description": "a domain unit to another cluster uses an allowed kind, or is a named pair",
+      "from": {
+        "tier": "domain"
+      },
+      "to": {
+        "tier": "domain",
+        "cluster": {
+          "different": true
+        }
+      },
+      "allowed": [],
+      "pairs": [
+        {
+          "from": "domains.fulfilment.shipping",
+          "to": "domains.payments.ledger",
+          "kinds": [
+            "listens"
+          ],
+          "comment": "Shipping starts when a payment settles."
+        }
+      ]
+    },
+    {
+      "id": "DOMAIN-FOUNDATION-KIND",
+      "type": "allowedKinds",
+      "description": "domain to the base uses an allowed kind",
+      "from": {
+        "tier": "domain"
+      },
+      "to": {
+        "tier": "base"
+      },
+      "allowed": [
+        "ids",
+        "listens"
+      ]
+    },
+    {
+      "id": "COUPLING-DOMAIN",
+      "type": "maxWeightedOut",
+      "description": "weighted outward coupling of a domain unit at most N",
+      "units": {
+        "tier": "domain"
+      },
+      "max": 12
+    },
+    {
+      "id": "SIDE-FOUNDATION-KIND",
+      "type": "allowedKinds",
+      "description": "admin to the base uses an allowed kind",
+      "from": {
+        "cluster": "admin"
+      },
+      "to": {
+        "tier": "base"
+      },
+      "allowed": [
+        "ids",
+        "listens",
+        "invokes"
+      ]
+    },
+    {
+      "id": "SIDE-OTHER-KIND",
+      "type": "allowedKinds",
+      "description": "admin to anything but the base and itself uses an allowed kind (none)",
+      "from": {
+        "cluster": "admin"
+      },
+      "to": {
+        "tier": {
+          "not": "base"
+        },
+        "cluster": {
+          "not": "admin"
+        }
+      },
+      "allowed": []
+    },
+    {
+      "id": "SIDE-COUPLING",
+      "type": "maxWeightedOut",
+      "description": "weighted outward coupling of an admin unit at most N",
+      "units": {
+        "cluster": "admin"
+      },
+      "max": 10
+    },
+    {
+      "id": "ENTITY-COUNT",
+      "type": "entitiesPerUnit",
+      "description": "records per unit within min..max",
+      "min": 1,
+      "max": 5
+    },
+    {
+      "id": "CALL-CYCLE",
+      "type": "callCycles",
+      "description": "no cycle of invokes between units",
+      "kind": "invokes",
+      "max": 0
+    }
+  ],
+  "warnings": [
+    {
+      "id": "W-SINGLE-ENTITY",
+      "type": "singleEntity",
+      "description": "units that own one record",
+      "enabled": true
+    },
+    {
+      "id": "W-FOUNDATION-UNUSED",
+      "type": "unreferenced",
+      "description": "base units no unit knows",
+      "units": {
+        "tier": "base"
+      },
+      "enabled": true
+    },
+    {
+      "id": "W-LOOKUP-CALL",
+      "type": "taggedRelationships",
+      "description": "invokes tagged lookup from shopping into the domain tier",
+      "from": {
+        "cluster": "shopping"
+      },
+      "to": {
+        "tier": "domain"
+      },
+      "kinds": [
+        "invokes"
+      ],
+      "tag": "lookup",
+      "enabled": true
+    },
+    {
+      "id": "W-HUB",
+      "type": "hub",
+      "description": "domain units that know every other unit of their cluster",
+      "units": {
+        "tier": "domain"
+      },
+      "peers": "cluster",
+      "enabled": true
+    }
+  ]
+}

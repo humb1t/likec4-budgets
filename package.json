@@ -1,0 +1,59 @@
+{
+  "name": "likec4-budgets",
+  "version": "0.1.0",
+  "description": "Coupling metrics and architecture budgets for LikeC4 models",
+  "license": "MIT",
+  "author": "Nikita Bishonen",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/humb1t/likec4-budgets.git"
+  },
+  "homepage": "https://github.com/humb1t/likec4-budgets#readme",
+  "bugs": {
+    "url": "https://github.com/humb1t/likec4-budgets/issues"
+  },
+  "keywords": [
+    "likec4",
+    "architecture",
+    "coupling",
+    "metrics",
+    "budgets",
+    "c4-model",
+    "architecture-as-code",
+    "ci"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=22.22.3"
+  },
+  "bin": {
+    "likec4-budgets": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "schema",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "action.yml"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build",
+    "smoke": "node dist/cli.js examples/shop -c examples/shop/likec4-budgets.json -q"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "likec4": "1.60.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,799 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "likec4-budgets config",
+  "description": "Which element kinds are the unit of ownership, how units are classified, what each relationship kind weighs, and the budget rules to enforce. Nothing about a domain is built into the tool.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "model",
+    "relationships",
+    "rules"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "model": {
+      "type": "object",
+      "description": "The contract of the LikeC4 specification this tool reads.",
+      "additionalProperties": false,
+      "required": [
+        "unitKinds",
+        "entityKinds",
+        "dimensions",
+        "metadata"
+      ],
+      "properties": {
+        "unitKinds": {
+          "description": "Element kinds that are the owner unit (the thing coupling is measured per). Example: a bounded context, a service, a module.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "entityKinds": {
+          "description": "Element kinds that a unit owns. They are nested in their unit and counted for cohesion.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "containerKinds": {
+          "description": "Element kinds that only group other elements (a tier, a cluster). A relationship may not start or end on one.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "externalKinds": {
+          "description": "Element kinds that are clients of the model. Their relationships are listed but no budget or figure counts them, and nothing inside the model may know them.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "externalWithin": {
+          "description": "An external must sit under a container of this kind whose metadata has these values.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "metadata"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "metadata": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "dimensions": {
+          "description": "Metadata keys of a unit that classify it. Units are rolled up per value of each dimension, and a unit with an invalid dimension is not scored by the rules. Each key needs a `values` list under `metadata`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "metadata": {
+          "description": "Metadata keys each kind carries. The property name is an element kind, or one of the roles `units`, `externals`, `containers`, `entities`, which cover every kind of that role.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/definitions/metadataDef"
+            }
+          }
+        },
+        "belongsTo": {
+          "description": "Consistency between two keys: the value of the property name belongs to exactly one value of `within`. Mismatch is the model error MODEL-BELONGS-TO.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "within",
+              "map"
+            ],
+            "properties": {
+              "within": {
+                "type": "string"
+              },
+              "map": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "placement": {
+          "description": "A unit's metadata must agree with the containers above it (MODEL-PLACEMENT).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "keys"
+          ],
+          "properties": {
+            "keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            },
+            "implied": {
+              "description": "A container without the key gets it from another key of its own through this map.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "from",
+                  "map"
+                ],
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "map": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "relationships": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "weights"
+      ],
+      "properties": {
+        "weights": {
+          "description": "Relationship kind -> weight of what it lets the source know. Kinds are ordered by weight, weakest first. A kind in the model without a weight is the model error MODEL-REL-KIND.",
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "statusTags": {
+          "description": "Tags of which every relationship carries exactly one (for example how far the relationship has come). Turns on MODEL-REL-TAG and the `--status` filter.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "rules": {
+      "description": "Budgets. A violation makes the exit code 1. Rule ids are free text and must be unique across rules and warnings.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "oneOf": [
+          {
+            "$ref": "#/definitions/allowedKinds"
+          },
+          {
+            "$ref": "#/definitions/fanOut"
+          },
+          {
+            "$ref": "#/definitions/needsInbound"
+          },
+          {
+            "$ref": "#/definitions/maxWeightedOut"
+          },
+          {
+            "$ref": "#/definitions/maxWeightedLeaving"
+          },
+          {
+            "$ref": "#/definitions/entitiesPerUnit"
+          },
+          {
+            "$ref": "#/definitions/callCycles"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type"
+        }
+      }
+    },
+    "warnings": {
+      "description": "Reported, never a failure.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "oneOf": [
+          {
+            "$ref": "#/definitions/singleEntity"
+          },
+          {
+            "$ref": "#/definitions/unreferenced"
+          },
+          {
+            "$ref": "#/definitions/taggedRelationships"
+          },
+          {
+            "$ref": "#/definitions/hub"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "metadataDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "optional": {
+          "type": "boolean"
+        }
+      }
+    },
+    "valueMatcher": {
+      "description": "A string, a list of strings (any of), {not: ...}, or, in `to` selectors only, {same: true} / {different: true} against the source unit.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "not"
+          ],
+          "properties": {
+            "not": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "same"
+          ],
+          "properties": {
+            "same": {
+              "const": true
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "different"
+          ],
+          "properties": {
+            "different": {
+              "const": true
+            }
+          }
+        }
+      ]
+    },
+    "selector": {
+      "description": "Metadata key -> matcher, all must hold. {} selects every unit.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/valueMatcher"
+      }
+    },
+    "kindList": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "allowedKinds": {
+      "description": "A relationship from a unit matching `from` to another unit matching `to` must use one of `allowed`, or be a named pair.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "description",
+        "from",
+        "to",
+        "allowed"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "allowedKinds"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "from": {
+          "$ref": "#/definitions/selector"
+        },
+        "to": {
+          "$ref": "#/definitions/selector"
+        },
+        "allowed": {
+          "$ref": "#/definitions/kindList"
+        },
+        "pairs": {
+          "description": "Named exceptions: this unit may know that unit by these kinds, nothing else opens. The ids are not checked against the model.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "from",
+              "to",
+              "kinds"
+            ],
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "kinds": {
+                "$ref": "#/definitions/kindList"
+              },
+              "comment": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "fanOut": {
+      "description": "Per unit matching `from`: at most `max` distinct relationships, target units or target nodes towards what `to` selects.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "description",
+        "from",
+        "to",
+        "count",
+        "max"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "fanOut"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "from": {
+          "$ref": "#/definitions/selector"
+        },
+        "to": {
+          "$ref": "#/definitions/selector"
+        },
+        "kinds": {
+          "$ref": "#/definitions/kindList"
+        },
+        "count": {
+          "enum": [
+            "relationships",
+            "units",
+            "nodes"
+          ]
+        },
+        "max": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "by",
+                "values"
+              ],
+              "properties": {
+                "by": {
+                  "type": "string"
+                },
+                "values": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "number"
+                  }
+                },
+                "default": {
+                  "type": "number"
+                }
+              }
+            }
+          ]
+        },
+        "noun": {
+          "type": "string"
+        }
+      }
+    },
+    "needsInbound": {
+      "description": "A unit matching `from` that has an outgoing relationship to `to` (not carrying `exceptTag`) must be the target of at least one relationship of `inbound.kinds` from a unit matching `inbound.from`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "description",
+        "from",
+        "to",
+        "inbound"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "needsInbound"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "from": {
+          "$ref": "#/definitions/selector"
+        },
+        "to": {
+          "$ref": "#/definitions/selector"
+        },
+        "exceptTag": {
+          "type": "string"
+        },
+        "inbound": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "from",
+            "kinds"
+          ],
+          "properties": {
+            "from": {
+              "$ref": "#/definitions/selector"
+            },
+            "kinds": {
+              "$ref": "#/definitions/kindList"
+            }
+          }
+        }
+      }
+    },
+    "maxWeightedOut": {
+      "description": "Weighted outward coupling of each unit matching `units` is at most `max`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "description",
+        "units",
+        "max"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "maxWeightedOut"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "units": {
+          "$ref": "#/definitions/selector"
+        },
+        "max": {
+          "type": "number"
+        }
+      }
+    },
+    "maxWeightedLeaving": {
+      "description": "Total weight of relationships that leave the group of units matching `group` is at most `max`, however many units hold them.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "description",
+        "group",
+        "max"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "maxWeightedLeaving"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "group": {
+          "$ref": "#/definitions/selector"
+        },
+        "max": {
+          "type": "number"
+        },
+        "subject": {
+          "type": "string"
+        }
+      }
+    },
+    "entitiesPerUnit": {
+      "description": "Every unit owns between `min` and `max` entities.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "description",
+        "min",
+        "max"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "entitiesPerUnit"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        }
+      }
+    },
+    "callCycles": {
+      "description": "At most `max` cycles (strongly connected groups of two or more units) in the graph of relationships of one kind.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "description",
+        "kind",
+        "max"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "callCycles"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "max": {
+          "type": "number"
+        }
+      }
+    },
+    "singleEntity": {
+      "description": "Units that own exactly one entity.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "singleEntity"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "unreferenced": {
+      "description": "Units matching `units` that no other unit knows.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "description",
+        "units"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "unreferenced"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "units": {
+          "$ref": "#/definitions/selector"
+        }
+      }
+    },
+    "taggedRelationships": {
+      "description": "Each relationship from `from` to `to` (of `kinds`) that carries `tag`, by name.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "description",
+        "from",
+        "to",
+        "tag"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "taggedRelationships"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "from": {
+          "$ref": "#/definitions/selector"
+        },
+        "to": {
+          "$ref": "#/definitions/selector"
+        },
+        "kinds": {
+          "$ref": "#/definitions/kindList"
+        },
+        "tag": {
+          "type": "string"
+        }
+      }
+    },
+    "hub": {
+      "description": "Units matching `units` that know every other unit that shares their value of the `peers` key (and have at least one peer).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "description",
+        "units",
+        "peers"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "hub"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "units": {
+          "$ref": "#/definitions/selector"
+        },
+        "peers": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

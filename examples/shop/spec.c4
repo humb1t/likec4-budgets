@@ -1,0 +1,46 @@
+// Vocabulary of the example shop. The budgets in likec4-budgets.json refer to it.
+//
+// The model is sorted into tiers. A tier holds units, and some tiers split into clusters:
+//   edge     what customers and staff touch; clusters `shopping` and `admin`
+//   domain   the business capabilities; clusters `fulfilment` and `payments`
+//   base     shared services; no clusters, the units sit in the tier itself
+//   outside  programs that use the shop; the model lists what they use and nothing more
+//
+// A relationship is drawn from the side that depends to the side that is depended on.
+// Its kind says how tightly, loosest first:
+//   ids         keeps an identifier of the other side's record, nothing else
+//   listens     is told about events and does not ask back
+//   invokes     sends a request and waits for the reply
+//   replicates  holds its own copy of the other side's data
+//
+// Tags on a relationship:
+//   live | wip | planned   how far it is today; exactly one
+//   lookup                 an invoke that only fetches data
+//   handed-in              the identifier arrives from outside, so no invoke is needed to supply it
+specification {
+  tag live
+  tag wip
+  tag planned
+  tag lookup
+  tag handed-in
+
+  // Grouping. metadata: tier (always), cluster (on clusters).
+  element tier
+  element cluster
+
+  // The unit of ownership. metadata: tier, cluster, state, team.
+  element service
+  element job
+  element library
+
+  // A program outside the shop. metadata: state, team.
+  element client
+
+  // A record a unit or client owns, nested in it.
+  element record
+
+  relationship ids
+  relationship listens
+  relationship invokes
+  relationship replicates
+}

@@ -1,0 +1,122 @@
+model {
+  tier edge 'Edge' {
+    metadata { tier 'edge' }
+    cluster shopping 'Shopping' {
+      metadata { cluster 'shopping' }
+      service storefront 'Storefront' {
+        metadata { tier 'edge'  cluster 'shopping'  state 'wip'  team 'web-team' }
+        record page 'Page'
+        record cart 'Cart'
+        record coupon 'Coupon'
+      }
+      service checkout 'Checkout' {
+        metadata { tier 'edge'  cluster 'shopping'  state 'wip'  team 'web-team' }
+        record purchase 'Purchase'
+        record receipt 'Receipt'
+      }
+    }
+    cluster admin 'Admin' {
+      metadata { cluster 'admin' }
+      service invoicing 'Invoicing' {
+        metadata { tier 'edge'  cluster 'admin'  state 'wip'  team 'finance-team' }
+        record invoice 'Invoice'
+        record tariff 'Tariff'
+      }
+      job staffing 'Staffing' {
+        metadata { tier 'edge'  cluster 'admin'  state 'planned'  team 'tbd' }
+        record rota 'Rota'
+        record shift 'Shift'
+      }
+    }
+  }
+  tier domains 'Domains' {
+    metadata { tier 'domain' }
+    cluster fulfilment 'Fulfilment' {
+      metadata { cluster 'fulfilment' }
+      service warehouse 'Warehouse' {
+        metadata { tier 'domain'  cluster 'fulfilment'  state 'live'  team 'ops-team' }
+        record stock 'Stock'
+        record bin 'Bin'
+      }
+      service shipping 'Shipping' {
+        metadata { tier 'domain'  cluster 'fulfilment'  state 'live'  team 'ops-team' }
+        record parcel 'Parcel'
+        record route 'Route'
+      }
+      library labels 'Labels' {
+        metadata { tier 'domain'  cluster 'fulfilment'  state 'wip'  team 'ops-team' }
+        record label 'Label'
+        record carrier 'Carrier'
+      }
+    }
+    cluster payments 'Payments' {
+      metadata { cluster 'payments' }
+      service ledger 'Ledger' {
+        metadata { tier 'domain'  cluster 'payments'  state 'live'  team 'money-team' }
+        record entry 'Entry'
+        record period 'Period'
+      }
+      job refunds 'Refunds' {
+        metadata { tier 'domain'  cluster 'payments'  state 'planned'  team 'tbd' }
+        record claim 'Claim'
+        record payout 'Payout'
+      }
+    }
+  }
+  tier base 'Base' {
+    metadata { tier 'base' }
+    service identity 'Identity' {
+      metadata { tier 'base'  cluster 'foundation'  state 'live'  team 'platform-team' }
+      record person 'Person'
+      record credential 'Credential'
+    }
+    library settings 'Settings' {
+      metadata { tier 'base'  cluster 'foundation'  state 'wip'  team 'platform-team' }
+      record flag 'Flag'
+      record option 'Option'
+    }
+  }
+  tier clients 'Clients' {
+    metadata { tier 'outside' }
+    client webapp 'Web app' {
+      metadata { state 'live'  team 'web-team' }
+      record visit 'Visit'
+      record token 'Token'
+    }
+    client feed 'Stock feed' {
+      metadata { state 'live'  team 'partner-team' }
+    }
+    client nightly 'Nightly export' {
+      metadata { state 'planned'  team 'tbd' }
+    }
+  }
+
+  // Edge to domain: asks, listens, keeps identifiers. Never holds a copy.
+  edge.shopping.storefront.cart -[invokes]-> domains.fulfilment.warehouse.stock 'asks for availability' #live
+  edge.shopping.storefront.page -[listens]-> domains.fulfilment.shipping.parcel #live
+  edge.shopping.checkout.purchase -[invokes]-> domains.payments.ledger.entry 'asks to charge' #wip
+  edge.shopping.checkout.purchase -[invokes]-> domains.payments.refunds.claim 'asks to open a claim' #planned
+  // Domain to edge: an identifier only, and the edge asks the unit first.
+  domains.payments.refunds.claim -[ids]-> edge.shopping.checkout.purchase #planned
+  // Inside a cluster.
+  domains.fulfilment.shipping.parcel -[ids]-> domains.fulfilment.warehouse.stock #live
+  domains.fulfilment.shipping.route -[replicates]-> domains.fulfilment.warehouse.bin 'copy of bins' #live
+  // Across clusters, the one allowed pair.
+  domains.fulfilment.shipping.route -[listens]-> domains.payments.ledger.period 'starts when a payment settles' #wip
+  // Into the base.
+  edge.shopping.storefront.coupon -[ids]-> base.identity.person #live
+  edge.shopping.checkout.receipt -[invokes]-> base.settings.option #planned
+  domains.payments.ledger.entry -[ids]-> base.identity.person #live
+  domains.fulfilment.warehouse.bin -[listens]-> base.settings.flag #planned
+  domains.fulfilment.labels.label -[ids]-> base.identity.credential #live
+  base.settings.option -[ids]-> base.identity.person #live
+  // Admin.
+  edge.admin.invoicing.invoice -[invokes]-> base.settings.option #wip
+  edge.admin.staffing.rota -[ids]-> base.identity.person #live
+  edge.admin.staffing.shift -[ids]-> edge.admin.invoicing.invoice #live
+  // Clients: listed, never budgeted.
+  clients.webapp.visit -[invokes]-> edge.shopping.storefront.page 'reads a page' #live
+  clients.webapp -[ids]-> domains.payments.ledger #live
+  clients.feed -[invokes]-> domains.fulfilment.warehouse.stock 'uploads stock' #live
+  clients.nightly -[replicates]-> edge.admin.invoicing.invoice 'copies invoices' #planned
+}
