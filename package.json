@@ -49,7 +49,7 @@
   },
   "dependencies": {
     "ajv": "^8.20.0",
-    "likec4": "1.60.0"
+    "likec4": "1.61.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
